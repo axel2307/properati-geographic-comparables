@@ -9,21 +9,18 @@ from model import ComparableModel, Filters, Query, evaluate
 
 st.set_page_config(page_title="Comparables geográficos | Properati", page_icon="🏙️", layout="wide")
 st.title("Comparables geográficos")
-st.caption("Proyecto de portfolio · filtros explícitos + vecinos por distancia Haversine")
-st.warning("Demo educativa: no es una tasación ni permite concluir precios de mercado.")
 
 with st.sidebar:
     st.header("Datos")
     uploads_enabled = os.environ.get("PROPERATI_ALLOW_UPLOADS") == "1"
     source = st.radio("Elegí el origen", ["Demo del autor", "Cargar archivo propio"] if uploads_enabled else ["Demo del autor"])
-    if not uploads_enabled:
-        st.caption("Este despliegue usa la demo del autor. La carga de archivos está deshabilitada; el README explica cómo habilitarla en tu computadora.")
+    st.caption("[Cómo funciona y documentación](https://github.com/axel2307/properati-geographic-comparables#readme)")
     upload = None
     if source == "Cargar archivo propio":
-        st.info("Subí únicamente datos que tengas permiso de procesar. En un despliegue público, el servidor recibe el archivo. Para datos privados, ejecutá la app en tu computadora.")
+        st.info("El archivo se procesa en el servidor que ejecuta la app.")
+        st.caption("[Privacidad de los archivos](https://github.com/axel2307/properati-geographic-comparables/blob/main/PRIVACY.md)")
         consent = st.checkbox("Entiendo dónde se procesa el archivo y tengo permiso para usarlo")
         upload = st.file_uploader("Archivo CSV o TSV", type=["csv", "tsv", "txt"], disabled=not consent)
-        st.caption("La app no guarda archivos, no usa caché de datos y no muestra direcciones, descripciones ni filas individuales. El proveedor de alojamiento puede tener sus propias políticas de registros y retención.")
 
 if source == "Cargar archivo propio" and upload is None:
     st.info("Para continuar, revisá el aviso de privacidad y elegí tu archivo en el panel de datos.")
@@ -39,30 +36,21 @@ try:
         frame, report = load_csv(upload)
     train, test, split_info = split_data(frame)
 except (DataValidationError, ValueError, pd.errors.ParserError, UnicodeError):
-    st.error("No pudimos preparar el archivo. Revisá el formato, las columnas requeridas y que haya suficientes ubicaciones distintas. El README detalla el esquema. No se muestran contenidos del archivo en este error.")
+    st.error("No pudimos preparar el archivo. Revisá el formato, las columnas y que haya suficientes ubicaciones distintas. El README detalla el esquema.")
     st.stop()
 
 author_demo = upload is None
 if author_demo:
-    st.info("Dataset ficticio proporcionado por el autor. Declaración del autor; no verificado de forma independiente. No representa precios de mercado.")
-    st.caption("Se usa una proyección minimizada autorizada del archivo del autor, con 8 columnas y coordenadas redondeadas a 3 decimales. Ese redondeo puede cambiar vecinos, grupos espaciales y resultados.")
-else:
-    st.info("Archivo propio · La procedencia, el carácter ficticio o real, las fechas y el permiso de uso son responsabilidad de quien lo carga. La declaración del autor de la demo no se aplica a otros archivos. Estos resultados no permiten concluir precios de mercado.")
+    st.caption("Demo educativa con datos ficticios")
 
-with st.expander("Preparación y separación de los datos"):
-    a, b, c = st.columns(3)
-    a.metric("Filas aceptadas", f"{len(frame):,}")
-    b.metric("Entrenamiento", f"{len(train):,}")
-    c.metric("Evaluación reservada", f"{len(test):,}")
-    st.write("Los duplicados se eliminan antes de separar grupos espaciales. Los comparables de esta pantalla salen solamente del conjunto de entrenamiento; las filas reservadas no participan en la predicción.")
-    st.caption("El corte por grupos espaciales reduce el solapamiento de ubicaciones, pero las celdas vecinas pueden contener propiedades cercanas. No garantiza independencia espacial completa ni mide evolución temporal.")
-    st.caption("La caja geográfica es una comprobación de plausibilidad, no una frontera oficial de CABA. La deduplicación puede unir observaciones distintas con iguales características registradas, o conservar repeticiones con datos distintos.")
-    if report:
-        st.write(f"Filas recibidas: {report['input_rows']:,}. Rechazadas: {report['rejected_rows']:,}. Duplicados removidos: {report['duplicate_rows_removed']:,}.")
-    st.caption("La evaluación conserva la misma separación reproducible. No se evalúa evolución temporal ni se usa una fecha de descarga como fecha de observación.")
+a, b, c = st.columns(3)
+a.metric("Filas aceptadas", f"{len(frame):,}")
+b.metric("Entrenamiento", f"{len(train):,}")
+c.metric("Evaluación reservada", f"{len(test):,}")
 
 st.subheader("La propiedad que querés comparar")
-st.write("Ingresá sus características y una ubicación aproximada dentro de CABA. El tipo, los ambientes, la superficie y la proporción cubierta participan en la selección.")
+st.write("Ingresá sus características y una ubicación aproximada dentro de CABA.")
+st.caption("Después de buscar, el mapa muestra la ubicación consultada y los comparables seleccionados.")
 
 with st.form("comparison_form"):
     left, right = st.columns(2)
@@ -77,8 +65,7 @@ with st.form("comparison_form"):
     with right:
         lat = st.number_input("Latitud aproximada", min_value=LAT_BOUNDS[0], max_value=LAT_BOUNDS[1], value=-34.60, step=0.001, format="%.3f")
         lon = st.number_input("Longitud aproximada", min_value=LON_BOUNDS[0], max_value=LON_BOUNDS[1], value=-58.44, step=0.001, format="%.3f")
-        st.caption("La distancia se mide en kilómetros sobre la superficie terrestre. No incluye recorridos por calles ni diferencias dentro de un barrio.")
-        st.caption("No se solicitan baños ni comodidades porque el esquema disponible no los contiene de forma confiable.")
+        st.caption("Distancia geográfica en kilómetros.")
     st.subheader("Cómo elegir los comparables")
     f1, f2, f3 = st.columns(3)
     with f1:
@@ -101,7 +88,7 @@ if submitted:
         st.error(str(error))
         st.stop()
     st.subheader("Resultado de la comparación")
-    st.caption(f"Proporción cubierta consultada: {query.ratio:.1%}. Se filtra por tipo exacto, ambientes, superficie y proporción; luego se eligen los más cercanos dentro de {radius:.1f} km.")
+    st.caption(f"Proporción cubierta: {query.ratio:.1%} · Radio máximo: {radius:.1f} km")
     if not estimate.sufficient:
         st.warning(estimate.insufficient_reason or f"Evidencia insuficiente: {estimate.n_comparables} comparables disponibles; hacen falta al menos 3. Podés cambiar los filtros de forma explícita o probar otra ubicación. No se calcula un precio.")
     else:
@@ -109,27 +96,27 @@ if submitted:
         m1.metric("Media de la demo (USD/m²)" if author_demo else "Media del archivo (USD/m²)", f"{estimate.usd_m2:,.0f}")
         m2.metric("Total de la demo (USD)" if author_demo else "Referencia del archivo (USD)", f"{estimate.asking_price_usd:,.0f}")
         m3.metric("Comparables utilizados", estimate.n_comparables)
-        st.write(f"Hay {estimate.n_within_filters} filas que cumplen todos los filtros. Se usan las {estimate.n_comparables} más cercanas, a distancias de {estimate.distance_min_km:.2f} a {estimate.distance_max_km:.2f} km.")
-        st.write(f"Rango observado entre esos comparables: USD {estimate.observed_min_usd_m2:,.0f}–{estimate.observed_max_usd_m2:,.0f} por m². Es un mínimo y máximo descriptivo; no es un intervalo de confianza ni de predicción.")
-        st.caption("La referencia total multiplica la media de USD/m² por la superficie total ingresada. Con pocas observaciones, valores atípicos y diferencias no observadas pueden influir mucho.")
+        st.write(f"{estimate.n_within_filters} filas cumplen los filtros. Se usan las {estimate.n_comparables} más cercanas, a {estimate.distance_min_km:.2f}–{estimate.distance_max_km:.2f} km.")
+        st.write(f"Rango observado: USD {estimate.observed_min_usd_m2:,.0f}–{estimate.observed_max_usd_m2:,.0f} por m².")
+    st.subheader("Ubicación y comparables")
+    map_points = pd.DataFrame([
+        {"lat": point_lat, "lon": point_lon, "color": "#0571B0", "size": 15}
+        for point_lat, point_lon in estimate.comparable_locations
+    ] + [{"lat": round(query.lat, 3), "lon": round(query.lon, 3), "color": "#E66101", "size": 25}])
+    st.map(map_points, latitude="lat", longitude="lon", color="color", size="size",
+           height=400, width="stretch",
+           alt=f"Mapa con la ubicación consultada en naranja y {estimate.n_comparables} comparables de entrenamiento en azul.")
+    st.caption("Naranja: consulta · Azul: comparables · Ubicaciones aproximadas")
     st.subheader("Evaluación con datos reservados")
-    st.caption("Evaluación exploratoria: ajustar filtros mirando estos errores puede sobreajustar este conjunto. Para una comparación formal, reservá un test final adicional sin usarlo para elegir filtros.")
     with st.spinner("Evaluando los mismos filtros en hasta 300 casos reservados…"):
         metrics = evaluate(train, test, filters)
-    st.write(f"Se evaluaron {metrics['sample_rows']} de {metrics['holdout_rows']} filas reservadas con una muestra determinista (semilla {metrics['seed']}). Hubo evidencia suficiente en {metrics['covered_rows']} casos: cobertura {metrics['coverage']:.1%}.")
+    st.write(f"Muestra: {metrics['sample_rows']} de {metrics['holdout_rows']} filas reservadas. Casos con evidencia suficiente: {metrics['covered_rows']} · cobertura {metrics['coverage']:.1%}.")
     if metrics["covered_rows"]:
         st.dataframe(pd.DataFrame({
             "Método": ["Comparables geográficos", "Mediana del entrenamiento"],
             "Error absoluto medio (USD/m²)": [metrics["mae"], metrics["baseline_mae"]],
             "Mediana del error absoluto (USD/m²)": [metrics["median_absolute_error"], metrics["baseline_median_absolute_error"]],
         }), hide_index=True, width="stretch")
-        st.caption("Ambos métodos se miden sobre exactamente los mismos casos con al menos 3 comparables y una referencia finita y positiva. Menor error es mejor. El error no describe los casos sin cobertura. Al cambiar filtros también puede cambiar el subconjunto evaluado, así que los errores entre consultas no son directamente comparables.")
+        st.caption("Ambos métodos se evalúan sobre los mismos casos con cobertura. Menor error es mejor.")
     else:
         st.info("No hubo casos con suficientes comparables. No se muestran métricas de error para un conjunto vacío.")
-    if author_demo:
-        st.caption("Estos errores evalúan únicamente el dataset de demostración del autor. No miden exactitud sobre propiedades reales ni el mercado.")
-
-with st.expander("Qué puede y qué no puede mostrar este proyecto"):
-    st.write("Es una demostración educativa de comparables filtrados y vecinos geográficos. No considera estado, antigüedad, orientación, piso, expensas, vistas, calidad de publicación ni condiciones de una operación. Tampoco ajusta inflación o cambios del mercado.")
-    st.write("No hay garantía estadística de incertidumbre: el rango observado describe solamente los comparables elegidos. La media puede ser sensible a valores extremos y a sesgos de selección.")
-    st.write("El autor declaró ficticio el archivo proporcionado y autorizó publicar su proyección minimizada. Esa declaración no fue verificada de forma independiente. No se distribuyen el archivo completo, textos libres, contactos ni coordenadas con la precisión original.")

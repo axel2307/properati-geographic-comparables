@@ -37,6 +37,36 @@ def test_nearest_selected_and_mean_and_range_are_observed():
     assert result.asking_price_usd == 200000
     assert (result.observed_min_usd_m2, result.observed_max_usd_m2) == (1000, 3000)
     assert result.distance_max_km == pytest.approx(0.22239, rel=1e-4)
+    assert result.comparable_locations == ((-34.600, -58.440), (-34.599, -58.440), (-34.598, -58.440))
+
+
+def test_map_locations_are_only_selected_training_points_and_are_coarsened():
+    frame = rows(tuple(range(1000, 8000, 1000)))
+    frame["lat"] += .00012345
+    frame["lon"] += .00023456
+    frame.loc[0, "property_type"] = "house"
+    frame.loc[1, "rooms"] = 10
+    result = ComparableModel(frame, Filters(k=3)).predict(query())
+    assert result.n_comparables == 3
+    assert result.comparable_locations == ((-34.598, -58.440), (-34.597, -58.440), (-34.596, -58.440))
+    assert result.usd_m2 == pytest.approx(4000)  # Same selected rows supply the displayed points and price.
+    precise_locations = set(zip(frame["lat"], frame["lon"]))
+    assert precise_locations.isdisjoint(result.comparable_locations)
+
+
+@pytest.mark.parametrize("count", [0, 1, 2])
+def test_map_includes_available_locations_without_predicting(count):
+    frame = rows()
+    frame.loc[count:, "property_type"] = "house"
+    result = ComparableModel(frame).predict(query())
+    assert not result.sufficient
+    assert len(result.comparable_locations) == count
+    assert result.comparable_locations == ((-34.600, -58.440), (-34.599, -58.440))[:count]
+
+
+def test_map_has_no_points_for_an_unseen_property_type():
+    result = ComparableModel(rows()).predict(query(property_type="PH"))
+    assert result.comparable_locations == ()
 
 
 @pytest.mark.parametrize("column,value", [

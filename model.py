@@ -76,6 +76,8 @@ class Estimate:
     distance_min_km: float | None = None
     distance_max_km: float | None = None
     insufficient_reason: str | None = None
+    # Only selected training locations, coarsened for display; no source rows.
+    comparable_locations: tuple[tuple[float, float], ...] = ()
 
     @property
     def sufficient(self) -> bool:
@@ -160,20 +162,27 @@ class ComparableModel:
         count = int(len(positions))
         # Stable distance order gives a reproducible choice at equal distances.
         selected = np.argsort(distances, kind="stable")[:f.k]
+        selected_positions = positions[selected]
+        locations = tuple(
+            (round(float(values["lat"][position]), 3), round(float(values["lon"][position]), 3))
+            for position in selected_positions
+        )
         if len(selected) < MIN_COMPARABLES:
-            return Estimate(count, int(len(selected)))
-        targets = values["usd_m2"][positions[selected]]
+            return Estimate(count, int(len(selected)), comparable_locations=locations)
+        targets = values["usd_m2"][selected_positions]
         selected_distances = distances[selected]
         prediction = _nonnegative_mean(targets)
         total = prediction * float(query.area_total)
         if not isfinite(total) or total <= 0:
             return Estimate(count, int(len(selected)), insufficient_reason=
-                            "No se puede calcular una referencia finita y positiva con estos valores extremos. Revisá las unidades y los datos.")
+                            "No se puede calcular una referencia finita y positiva con estos valores extremos. Revisá las unidades y los datos.",
+                            comparable_locations=locations)
         return Estimate(
             n_within_filters=count, n_comparables=int(len(selected)),
             usd_m2=prediction, asking_price_usd=total,
             observed_min_usd_m2=float(targets.min()), observed_max_usd_m2=float(targets.max()),
             distance_min_km=float(selected_distances.min()), distance_max_km=float(selected_distances.max()),
+            comparable_locations=locations,
         )
 
 
