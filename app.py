@@ -1,11 +1,25 @@
 """Streamlit portfolio prototype. Uploaded rows are never cached or displayed."""
 import os
+from math import asinh, floor, log2, pi, radians, tan
 
 import pandas as pd
 import streamlit as st
 
 from data import DataValidationError, LAT_BOUNDS, LON_BOUNDS, MAX_BYTES, load_csv, load_demo, split_data
 from model import ComparableModel, Filters, Query, evaluate
+
+
+def map_zoom(points: pd.DataFrame) -> int:
+    """Fit a conservative 300 x 400 px mobile viewport with 40% total padding."""
+    min_lat, max_lat = points["lat"].min(), points["lat"].max()
+    center_y = asinh(tan(radians((min_lat + max_lat) / 2))) / (2 * pi)
+    y_span = 2 * max(abs(asinh(tan(radians(lat))) / (2 * pi) - center_y)
+                     for lat in (min_lat, max_lat))
+    x_span = (points["lon"].max() - points["lon"].min()) / 360
+    # Web Mercator uses a 512 px world at zoom 0. Match st.map's bounds midpoint.
+    zooms = [log2(pixels / (512 * span)) for pixels, span in
+             ((300 * .6, x_span), (400 * .6, y_span)) if span > 0]
+    return max(0, min(15, floor(min(zooms)))) if zooms else 15
 
 st.set_page_config(page_title="Comparables geográficos | Properati", page_icon="🏙️", layout="wide")
 st.title("Comparables geográficos")
@@ -104,7 +118,7 @@ if submitted:
         for point_lat, point_lon in estimate.comparable_locations
     ] + [{"lat": round(query.lat, 3), "lon": round(query.lon, 3), "color": "#E66101", "size": 25}])
     st.map(map_points, latitude="lat", longitude="lon", color="color", size="size",
-           height=400, width="stretch",
+           height=400, width="stretch", zoom=map_zoom(map_points),
            alt=f"Mapa con la ubicación consultada en naranja y {estimate.n_comparables} comparables de entrenamiento en azul.")
     st.caption("Naranja: consulta · Azul: comparables · Ubicaciones aproximadas")
     st.subheader("Evaluación con datos reservados")
